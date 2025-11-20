@@ -1,7 +1,9 @@
 # app.py
-# Dog Breed Recommender — Streamlit hosted app (vertical layout, images + optional videos)
+# Dog Breed Recommender — Streamlit hosted app (images + optional videos)
 
 import streamlit as st
+st.set_page_config(page_title="Dog Breed Recommender", layout="centered")  # MUST be first Streamlit call
+
 import pandas as pd
 import numpy as np
 import requests
@@ -12,7 +14,9 @@ from io import BytesIO
 from PIL import Image as PILImage
 import matplotlib.pyplot as plt
 
-# Try importing MoviePy, fallback if unavailable
+# -----------------------
+# Optional MoviePy import (fallback if unavailable)
+# -----------------------
 try:
     from moviepy.editor import ImageSequenceClip
     moviepy_available = True
@@ -23,8 +27,6 @@ except ModuleNotFoundError:
 # -----------------------
 # Config
 # -----------------------
-st.set_page_config(page_title="Dog Breed Recommender", layout="centered")
-
 DATA_DIR = "data"
 BREED_CSV = os.path.join(DATA_DIR, "breed_traits.csv")
 TRAIT_CSV = os.path.join(DATA_DIR, "trait_descriptions.csv")
@@ -169,7 +171,7 @@ user_name = st.session_state.get("name", name)
 if user_name:
     st.write(f"Nice to meet you, **{user_name}**! We'll ask about each trait — rate importance 1 (low) to 5 (high).")
 
-# Question loop (simplified)
+# Question loop
 total_traits = len(traits)
 if st.session_state.step < total_traits:
     cur_trait = traits[st.session_state.step]
@@ -236,8 +238,4 @@ else:
         st.pyplot(fig)
     except Exception:
         st.info("Could not generate score chart.")
-
-
-
-
 
