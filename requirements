@@ -1,0 +1,9 @@
+streamlit>=1.12
+pandas
+numpy
+requests
+Pillow
+moviepy
+imageio
+imageio-ffmpeg
+matplotlib
