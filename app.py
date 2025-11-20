@@ -1,3 +1,5 @@
+# app.py
+# Dog Breed Recommender — Streamlit hosted app (vertical layout, images + optional videos)
 
 import streamlit as st
 import pandas as pd
@@ -9,8 +11,18 @@ import tempfile
 from io import BytesIO
 from PIL import Image as PILImage
 import matplotlib.pyplot as plt
-from moviepy.editor import ImageSequenceClip
 
+# Try importing MoviePy, fallback if unavailable
+try:
+    from moviepy.editor import ImageSequenceClip
+    moviepy_available = True
+except ModuleNotFoundError:
+    moviepy_available = False
+    st.warning("MoviePy not available — slideshow videos will be skipped.")
+
+# -----------------------
+# Config
+# -----------------------
 st.set_page_config(page_title="Dog Breed Recommender", layout="centered")
 
 DATA_DIR = "data"
@@ -90,7 +102,7 @@ def fetch_images_for_breed(breed_name, max_images=MAX_IMAGES_PER_BREED):
     return uniq[:max_images]
 
 def create_slideshow_video_from_pil(images, fps=VIDEO_FPS, duration_per_image=VIDEO_FRAME_DURATION):
-    if not images:
+    if not moviepy_available or not images:
         return None
     tmp_dir = tempfile.mkdtemp()
     frame_paths = []
@@ -129,16 +141,103 @@ breed_traits[traits] = breed_traits[traits].apply(pd.to_numeric, errors="coerce"
 # Streamlit UI
 # -----------------------
 st.title("🐶 Dog Breed Recommender")
+st.markdown("Welcome! Rate traits to get your top recommended dog breeds.")
 
-# --- [User inputs and trait rating UI remain unchanged] ---
+# start/reset controls
+if "started" not in st.session_state:
+    st.session_state.started = False
+if "step" not in st.session_state:
+    st.session_state.step = 0
+if "answers" not in st.session_state:
+    st.session_state.answers = {}
+if "skipped" not in st.session_state:
+    st.session_state.skipped = set()
 
-# After computing top breeds
-try:
-    fig, ax = plt.subplots()
-    ax.pie(top_breeds["Total_Score"], labels=top_breeds["Breed"], autopct="%1.1f%%")
-    ax.set_title("Recommendation Weighting")
-    st.pyplot(fig)
-except Exception:
-    st.info("Could not generate score chart (matplotlib issue).")
+name = st.text_input("What's your name?", value=st.session_state.get("name", ""))
+if st.button("Start" if not st.session_state.started else "Restart"):
+    st.session_state.started = True
+    st.session_state.step = 0
+    st.session_state.answers = {}
+    st.session_state.skipped = set()
+    st.session_state.name = name
+
+if not st.session_state.started:
+    st.info("Click **Start** when ready. You can change your name before starting.")
+    st.stop()
+
+user_name = st.session_state.get("name", name)
+if user_name:
+    st.write(f"Nice to meet you, **{user_name}**! We'll ask about each trait — rate importance 1 (low) to 5 (high).")
+
+# Question loop (simplified)
+total_traits = len(traits)
+if st.session_state.step < total_traits:
+    cur_trait = traits[st.session_state.step]
+    st.subheader(f"**{cur_trait}**")
+    slider = st.slider("How important is this trait?", 1, 5, st.session_state.answers.get(cur_trait, 3), key=f"slider_{st.session_state.step}")
+    col_back, col_skip, col_next = st.columns(3)
+    if col_back.button("⬅ Back"):
+        if st.session_state.step > 0:
+            st.session_state.answers[cur_trait] = slider
+            st.session_state.step -= 1
+            st.experimental_rerun()
+    if col_skip.button("Skip ❌"):
+        st.session_state.skipped.add(cur_trait)
+        if cur_trait in st.session_state.answers:
+            del st.session_state.answers[cur_trait]
+        st.session_state.step += 1
+        st.experimental_rerun()
+    if col_next.button("Next ➡"):
+        st.session_state.answers[cur_trait] = slider
+        if cur_trait in st.session_state.skipped:
+            st.session_state.skipped.remove(cur_trait)
+        st.session_state.step += 1
+        st.experimental_rerun()
+
+else:
+    st.success("All questions answered!")
+    # compute top breeds
+    used_traits = [t for t in traits if t in st.session_state.answers]
+    if not used_traits:
+        st.warning("No traits rated.")
+        st.stop()
+    def score_row(row):
+        return sum(float(row.get(t,0)) * st.session_state.answers[t] for t in used_traits)
+    breed_traits["Total_Score"] = breed_traits.apply(score_row, axis=1)
+    top_breeds = breed_traits.sort_values(by="Total_Score", ascending=False).head(3)
+
+    for idx, row in top_breeds.iterrows():
+        breed_name = row["Breed"]
+        st.markdown(f"### 🐾 {breed_name} — Score: {int(row['Total_Score'])}")
+        images = fetch_images_for_breed(breed_name, max_images=MAX_IMAGES_PER_BREED)
+        if images:
+            st.image(images[0], use_column_width=True)
+            if moviepy_available:
+                video_path = create_slideshow_video_from_pil(images)
+                if video_path and os.path.exists(video_path):
+                    st.video(video_path)
+                else:
+                    st.info("Could not create slideshow video.")
+            else:
+                st.info("Video generation skipped because MoviePy is not installed.")
+        else:
+            st.info(f"Images not found for {breed_name}.")
+
+        desc_text = generate_breed_description_from_traits(row, traits, top_n=4)
+        st.markdown("**Description:**")
+        st.write(desc_text)
+        st.write("---")
+
+    # Pie chart of top breed scores
+    try:
+        fig, ax = plt.subplots()
+        ax.pie(top_breeds["Total_Score"], labels=top_breeds["Breed"], autopct="%1.1f%%")
+        ax.set_title("Recommendation Weighting")
+        st.pyplot(fig)
+    except Exception:
+        st.info("Could not generate score chart.")
+
+
+
 
 
