@@ -1,9 +1,9 @@
 streamlit>=1.12
-pandas
-numpy
-requests
-Pillow
-moviepy
-imageio
-imageio-ffmpeg
-matplotlib
+pandas==2.1.1
+numpy==1.26.0
+requests==2.31.0
+Pillow==10.1.0
+moviepy==2.0.0
+imageio==2.31.1
+imageio-ffmpeg==0.4.10
+matplotlib==3.7.2
