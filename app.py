@@ -1,8 +1,7 @@
 # app.py
 # Dog Breed Recommender — Streamlit hosted app (images + optional videos)
-
 import streamlit as st
-st.set_page_config(page_title="Dog Breed Recommender", layout="centered")  # MUST be first Streamlit call
+st.set_page_config(page_title="Dog Breed Recommender", layout="centered")
 
 import pandas as pd
 import numpy as np
@@ -15,9 +14,7 @@ from PIL import Image as PILImage
 import matplotlib.pyplot as plt
 from urllib.parse import quote
 
-# -----------------------
 # Optional MoviePy import (fallback if unavailable)
-# -----------------------
 try:
     from moviepy.editor import ImageSequenceClip
     moviepy_available = True
@@ -25,9 +22,7 @@ except ModuleNotFoundError:
     moviepy_available = False
     st.warning("MoviePy not available — slideshow videos will be skipped.")
 
-# -----------------------
 # Config
-# -----------------------
 DATA_DIR = "data"
 BREED_CSV = os.path.join(DATA_DIR, "breed_traits.csv")
 TRAIT_CSV = os.path.join(DATA_DIR, "trait_descriptions.csv")
@@ -45,16 +40,14 @@ def load_data():
     # load CSVs and do basic cleaning (remove stray weird characters)
     breed_traits = pd.read_csv(BREED_CSV)
     trait_desc = pd.read_csv(TRAIT_CSV)
-    # normalize column strings
+    # normalize column strings (remove NBSP and stray Â)
     for df in (breed_traits, trait_desc):
         for c in df.select_dtypes(include=[object]).columns:
             df[c] = df[c].astype(str).str.replace('\u00a0', ' ', regex=False).str.replace('Â', '', regex=False)
     return breed_traits, trait_desc
 
-
 def normalize_breed_variants(breed_name):
-    """Return a list of plausible folder/filename variants used in many GitHub image datasets.
-    Also remove unsafe filename characters and return url-quoteable strings where needed."""
+    """Return a list of plausible folder/filename variants used in many GitHub image datasets."""
     if not isinstance(breed_name, str):
         breed_name = str(breed_name)
     raw = breed_name.replace("\xa0", " ").strip()
@@ -69,7 +62,7 @@ def normalize_breed_variants(breed_name):
     variants.append(re.sub(r"\s+", "_", raw))
     variants.append("_".join([w.capitalize() for w in re.sub(r"\s+", " ", raw).split(" ")]))
     variants.append(cleaned2.lower())
-    # also add url-quoted versions (for display as direct links)
+    # return unique variants
     seen = set()
     uniq = []
     for v in variants:
@@ -78,22 +71,22 @@ def normalize_breed_variants(breed_name):
             seen.add(v)
     return uniq
 
-
 @st.cache_data(show_spinner=False)
 def try_fetch_image_bytes(url, timeout=6):
+    """Return (bytes, url) if image fetched and content-type is image, else (None, url)."""
     try:
         resp = requests.get(url, timeout=timeout)
         if resp.status_code == 200 and 'image' in resp.headers.get('content-type', ''):
-            return resp.content
+            return resp.content, url
     except Exception:
-        return None
-    return None
-
+        return None, url
+    return None, url
 
 @st.cache_data(show_spinner=False)
 def fetch_images_for_breed(breed_name, max_images=MAX_IMAGES_PER_BREED):
-    """Try multiple filename/folder variants and common extensions. Returns list of PIL images.
-    If none found returns empty list.
+    """
+    Try multiple filename/folder variants and common extensions.
+    Returns list of tuples: (PIL image, raw_url). If none found returns empty list.
     """
     images = []
     folder_variants = normalize_breed_variants(breed_name)
@@ -101,14 +94,13 @@ def fetch_images_for_breed(breed_name, max_images=MAX_IMAGES_PER_BREED):
     for folder in folder_variants:
         for idx in range(1, max_images + 1):
             for ext in exts:
-                # use quoted path components to handle spaces/special chars
                 folder_q = quote(folder, safe='')
                 url = f"{GITHUB_RAW_BASE}/{folder_q}/{idx}.{ext}"
-                content = try_fetch_image_bytes(url)
+                content, used_url = try_fetch_image_bytes(url)
                 if content:
                     try:
                         img = PILImage.open(BytesIO(content)).convert("RGB")
-                        images.append(img)
+                        images.append((img, used_url))
                         break
                     except Exception:
                         continue
@@ -117,21 +109,20 @@ def fetch_images_for_breed(breed_name, max_images=MAX_IMAGES_PER_BREED):
     # deduplicate by size+mode
     uniq = []
     seen = set()
-    for img in images:
+    for img, url in images:
         key = (img.size, img.mode)
         if key not in seen:
-            uniq.append(img)
+            uniq.append((img, url))
             seen.add(key)
     return uniq[:max_images]
 
-
-def create_slideshow_video_from_pil(images, fps=VIDEO_FPS, duration_per_image=VIDEO_FRAME_DURATION):
-    if not moviepy_available or not images:
+def create_slideshow_video_from_pil(images_with_urls, fps=VIDEO_FPS, duration_per_image=VIDEO_FRAME_DURATION):
+    if not moviepy_available or not images_with_urls:
         return None
     tmp_dir = tempfile.mkdtemp()
     frame_paths = []
     try:
-        for i, img in enumerate(images):
+        for i, (img, _) in enumerate(images_with_urls):
             frame_path = os.path.join(tmp_dir, f"frame_{i:03d}.jpg")
             img.save(frame_path, format="JPEG")
             frame_paths.append(frame_path)
@@ -142,7 +133,6 @@ def create_slideshow_video_from_pil(images, fps=VIDEO_FPS, duration_per_image=VI
         return out_path
     except Exception:
         return None
-
 
 def generate_breed_description_from_traits(breed_row, traits, top_n=3):
     # take numeric traits if possible
@@ -157,19 +147,15 @@ def generate_breed_description_from_traits(breed_row, traits, top_n=3):
     phrases = [f"{t} ({int(score)})" for t, score in top]
     return "Strong traits — " + ", ".join(phrases)
 
-
 # -----------------------
 # Load data
 # -----------------------
 breed_traits, trait_desc = load_data()
 ignore_traits = ["Coat Type", "Coat Length"]
-# ensure the trait list uses the Trait column from trait_desc
 traits = [t for t in trait_desc["Trait"].tolist() if t not in ignore_traits]
-# add missing columns with zeros
 for t in traits:
     if t not in breed_traits.columns:
         breed_traits[t] = 0
-# coerce numeric trait columns
 for t in traits:
     try:
         breed_traits[t] = pd.to_numeric(breed_traits[t], errors="coerce").fillna(0)
@@ -180,7 +166,11 @@ for t in traits:
 # Streamlit UI
 # -----------------------
 st.title("🐶 Dog Breed Recommender")
-st.markdown("Welcome! Rate traits to get your top recommended dog breeds.")
+
+# Welcome message exactly as requested
+st.markdown("**Welcome to Dog breed recommender.**")
+st.markdown("I am **D**, your friendly assistant to help you choose your furry friend.")
+st.markdown("**What is your name?**")
 
 # start/reset/exit controls
 if "started" not in st.session_state:
@@ -196,8 +186,8 @@ if "name" not in st.session_state:
 if "results_shown" not in st.session_state:
     st.session_state.results_shown = False
 
-# Name input
-name = st.text_input("What's your name?", value=st.session_state.get("name", ""))
+# Name input and start flow
+name = st.text_input("", value=st.session_state.get("name", ""))
 cols_ctrl = st.columns([1,1,1])
 with cols_ctrl[0]:
     if st.button("Start" if not st.session_state.started else "Restart"):
@@ -217,12 +207,12 @@ with cols_ctrl[2]:
     st.write("")
 
 if not st.session_state.started:
-    st.info("Click **Start** when ready. You can change your name before starting.")
+    st.info("Thank you for choosing me today. Let's start. Please rate the following traits you prefer in your dog based on your personality and lifestyle. I will be happy to help you with the top three recommended breeds. Click Start once ready.")
     st.stop()
 
 user_name = st.session_state.get("name", name)
 if user_name:
-    st.write(f"Nice to meet you, **{user_name}**! We'll ask about each trait — rate importance 1 (low) to 5 (high).")
+    st.write(f"Thank you, **{user_name}**, for choosing me today. Let's start the quiz.")
 
 # Question loop with progress and trait description/rating labels
 total_traits = len(traits)
@@ -296,9 +286,14 @@ else:
     breed_traits['Total_Score'] = breed_traits.apply(score_row, axis=1)
     top_breeds = breed_traits.sort_values(by='Total_Score', ascending=False).head(3)
 
+    # First, print the three recommendations (names only)
     st.markdown("### My top 3 recommendations are...")
+    for i, (_, r) in enumerate(top_breeds.iterrows(), start=1):
+        st.markdown(f"{i}. **{r['Breed']}** — Score: {int(r['Total_Score'])}")
 
-    # show results with intro phrase and images (+ fallback github url suggestions)
+    st.write("---")
+
+    # Then for each, show images and descriptions
     for idx, row in top_breeds.iterrows():
         breed_name = row['Breed']
         st.markdown(f"### 🐾 {breed_name} — Score: {int(row['Total_Score'])}")
@@ -318,15 +313,28 @@ else:
             # get description of trait if available
             trow = trait_desc[trait_desc['Trait'] == t]
             desc = trow.iloc[0]['Description'] if not trow.empty else ''
-            st.write(f"- **{t}**: breed = {br}, your preference = {st.session_state.answers[t]}\n  \n    {desc}")
+            st.write(f"- **{t}**: breed = {br}, your preference = {st.session_state.answers[t]}")
+            if desc:
+                st.write(f"    {desc}")
 
         # images
-        images = fetch_images_for_breed(breed_name, max_images=MAX_IMAGES_PER_BREED)
-        if images:
-            try:
-                st.image(images[0], use_column_width=True, caption=breed_name)
-            except Exception:
-                st.write("Image could not be rendered here — open the raw image URL in your browser.")
+        images_with_urls = fetch_images_for_breed(breed_name, max_images=MAX_IMAGES_PER_BREED)
+        if images_with_urls:
+            # display first image (no caption under the image)
+            img, url = images_with_urls[0]
+            st.image(img, use_column_width=True)
+            # provide explicit link to the raw image so clicking opens valid URL
+            st.markdown(f"[Open full-size image]({url})")
+
+            # optional slideshow video
+            if moviepy_available:
+                video_path = create_slideshow_video_from_pil(images_with_urls)
+                if video_path and os.path.exists(video_path):
+                    st.video(video_path)
+                else:
+                    st.info("Could not create slideshow video.")
+            else:
+                st.info("Video generation skipped because MoviePy is not installed.")
         else:
             st.info(f"Images not found for {breed_name}.")
             # suggest example GitHub raw URLs using normalized variants
@@ -337,8 +345,8 @@ else:
                 example = f"{GITHUB_RAW_BASE}/{v_q}/1.jpg"
                 st.write(f"- {example}")
 
+        # description (no image-specific description)
         desc_text = generate_breed_description_from_traits(row, traits, top_n=4)
-        # prepend required phrase
         final_desc = f"This dog has the following traits which {user_name or 'you'} values the most: {desc_text}"
         st.markdown("**Description:**")
         st.write(final_desc)
@@ -372,35 +380,39 @@ else:
             st.experimental_rerun()
         elif choice == "Ask for explanation of results":
             st.header("Explanation for recommendations")
+            # Show the selection logic clearly
+            st.markdown("**Selection logic used:** Calculates breed scores = sum(breed_trait_value * user_importance).")
+            st.markdown("Below we show the per-trait contributions and the total for each top breed.")
             for idx, row in top_breeds.iterrows():
                 breed_name = row['Breed']
                 st.subheader(breed_name)
-                st.write("Top matching traits and descriptions:")
-                diffs = []
+                contributions = []
                 for t in used_traits:
                     try:
-                        diffs.append((t, abs(float(st.session_state.answers[t]) - float(row.get(t,0))), row.get(t,0)))
+                        breed_val = float(row.get(t, 0))
+                        user_pref = float(st.session_state.answers[t])
+                        contrib = breed_val * user_pref
+                        contributions.append({'Trait': t, 'Breed Value': int(breed_val), 'Your Importance': int(user_pref), 'Contribution': int(contrib)})
                     except Exception:
                         pass
-                diffs_sorted = sorted(diffs, key=lambda x: x[1])
-                for t, diff, br_val in diffs_sorted[:5]:
-                    trow = trait_desc[trait_desc['Trait'] == t]
-                    desc = trow.iloc[0]['Description'] if not trow.empty else ''
-                    st.write(f"- **{t}**: breed = {br_val}, you = {st.session_state.answers[t]} (diff {diff}). {desc}")
-            st.info("If you'd like more detail or a personalized walk-through, choose 'Retake the quiz' or 'Exit' above.")
+                df = pd.DataFrame(contributions)
+                if not df.empty:
+                    st.dataframe(df)
+                    total_calc = df['Contribution'].sum()
+                    st.write(f"**Total Score (sum of contributions)**: {int(total_calc)} — matches computed Total_Score: {int(row['Total_Score'])}")
+            st.info("If you'd like a more detailed personal walkthrough click on the buttons below.")
 
-    # bottom controls
+    # bottom controls (labels cleaned)
     bottom_col1, bottom_col2 = st.columns(2)
     with bottom_col1:
-        if st.button("Restart Quiz (bottom)"):
+        if st.button("Restart Quiz"):
             st.session_state.started = True
             st.session_state.step = 0
             st.session_state.answers = {}
             st.session_state.skipped = set()
             st.experimental_rerun()
     with bottom_col2:
-        if st.button("Exit (bottom)"):
+        if st.button("Exit"):
             user = user_name or "friend"
             st.success(f"Thank you, {user} — come back any time!")
             st.stop()
-
