@@ -1,7 +1,7 @@
 # app.py
 # Dog Breed Recommender — Streamlit hosted app (vertical layout, images + auto-generated videos)
 # Replace or place this file in the root of your GitHub repo and include data/ folder.
-
+ 
 import streamlit as st
 import pandas as pd
 import numpy as np
