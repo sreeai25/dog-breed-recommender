@@ -103,11 +103,12 @@ def fetch_images_for_breed(breed_name, max_images=MAX_IMAGES_PER_BREED):
 
 
 def create_slideshow_video_from_pil(images, fps=VIDEO_FPS, duration_per_image=VIDEO_FRAME_DURATION):
+    # Fallback: MoviePy unavailable
     if ImageSequenceClip is None:
-        return None  # fallback when MoviePy is unavailable
+        return None
     if not images:
         return None
-    tmp_dir = tempfile.mkdtemp()(images, fps=VIDEO_FPS, duration_per_image=VIDEO_FRAME_DURATION):
+    tmp_dir = tempfile.mkdtemp()()(images, fps=VIDEO_FPS, duration_per_image=VIDEO_FRAME_DURATION):
     if not images:
         return None
     tmp_dir = tempfile.mkdtemp()
