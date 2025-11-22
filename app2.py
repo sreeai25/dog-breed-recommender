@@ -14,7 +14,10 @@ import time
 from io import BytesIO
 from PIL import Image as PILImage
 import matplotlib.pyplot as plt
-from moviepy.editor import ImageSequenceClip
+try:
+    from moviepy.editor import ImageSequenceClip
+except Exception:
+    ImageSequenceClip = None  # MoviePy fallback disabled
 
 # -----------------------
 # Config
@@ -100,6 +103,11 @@ def fetch_images_for_breed(breed_name, max_images=MAX_IMAGES_PER_BREED):
 
 
 def create_slideshow_video_from_pil(images, fps=VIDEO_FPS, duration_per_image=VIDEO_FRAME_DURATION):
+    if ImageSequenceClip is None:
+        return None  # fallback when MoviePy is unavailable
+    if not images:
+        return None
+    tmp_dir = tempfile.mkdtemp()(images, fps=VIDEO_FPS, duration_per_image=VIDEO_FRAME_DURATION):
     if not images:
         return None
     tmp_dir = tempfile.mkdtemp()
